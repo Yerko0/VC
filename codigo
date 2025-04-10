@@ -1,1 +1,56 @@
-hgbg
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, BatchNormalization
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping
+import tensorflow as tf
+
+data = pd.read_csv('covidata.csv')
+data.replace([97, 98, 99, '9999-99-99'], np.nan, inplace=True)
+data.fillna(data.mode().iloc[0], inplace=True)
+data.drop(['USMER', 'MEDICAL_UNIT', 'DATE_DIED'], axis=1, inplace=True)
+data = pd.get_dummies(data, columns=['SEX', 'PATIENT_TYPE'], drop_first=True)
+
+data = pd.read_csv('covidata.csv')
+data.replace([97, 98, 99, '9999-99-99'], np.nan, inplace=True)
+data.fillna(data.mode().iloc[0], inplace=True)
+data.drop(['USMER', 'MEDICAL_UNIT', 'DATE_DIED'], axis=1, inplace=True)
+data = pd.get_dummies(data, columns=['SEX', 'PATIENT_TYPE'], drop_first=True)
+
+#variables
+X = data.drop(['CLASIFFICATION_FINAL'], axis=1)
+y = data['CLASIFFICATION_FINAL'] - data['CLASIFFICATION_FINAL'].min()
+scaler = MinMaxScaler()
+X_scaled = scaler.fit_transform(X)
+X_scaled = X_scaled.reshape((X_scaled.shape[0], X_scaled.shape[1], 1))
+X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
+y_train = tf.keras.utils.to_categorical(y_train, num_classes=y.nunique())
+y_test = tf.keras.utils.to_categorical(y_test, num_classes=y.nunique())
+
+#tamaño para pruebas
+X_train_small = X_train[:5000]
+y_train_small = y_train[:5000]
+
+#modelo LSTM
+model = Sequential([
+    Input(shape=(X_train.shape[1], 1)),
+    LSTM(16, return_sequences=True),
+    BatchNormalization(),
+    Dropout(0.2),
+    LSTM(8),
+    BatchNormalization(),
+    Dropout(0.2),
+    Dense(y.nunique(), activation='softmax')
+])
+
+#compilacion y entrenamiento con early stopping
+early_stop = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
+model.compile(optimizer=Adam(learning_rate=0.0005), loss='categorical_crossentropy', metrics=['accuracy'])
+model.fit(X_train_small, y_train_small, epochs=30, batch_size=128, validation_data=(X_test, y_test), callbacks=[early_stop], verbose=1)
+
+loss, accuracy = model.evaluate(X_test, y_test, verbose=0)
+print(f'pérdida de prueba: {loss:.4f}')
+print(f'precisión de la prueba: {accuracy:.4f}')
